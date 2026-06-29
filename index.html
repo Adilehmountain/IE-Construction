@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inland Empire Construction Companies — Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<style>
+  :root{
+    --gc:#1d4ed8;        /* general contractor - blue */
+    --sub:#ea580c;       /* subcontractor - orange */
+    --ink:#0f172a;
+    --muted:#64748b;
+    --line:#e2e8f0;
+    --bg:#f1f5f9;
+    --panel:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  #app{display:flex;height:100vh;overflow:hidden}
+
+  /* Sidebar */
+  #sidebar{width:360px;min-width:360px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;height:100%}
+  .head{padding:18px 18px 12px;border-bottom:1px solid var(--line)}
+  .head h1{font-size:17px;margin:0 0 4px;letter-spacing:-.2px}
+  .head p{margin:0;font-size:12px;color:var(--muted);line-height:1.45}
+  .stats{display:flex;gap:8px;margin-top:12px}
+  .stat{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .stat .n{font-size:20px;font-weight:700;line-height:1}
+  .stat .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:3px}
+  .stat.gc .n{color:var(--gc)} .stat.sub .n{color:var(--sub)}
+
+  .controls{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+  .controls input,.controls select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;color:var(--ink)}
+  .controls .row{display:flex;gap:8px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{flex:1;border:0;background:#fff;padding:8px 6px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
+  .seg button.active{color:#fff}
+  .seg button[data-t="all"].active{background:#334155}
+  .seg button[data-t="General Contractor"].active{background:var(--gc)}
+  .seg button[data-t="Subcontractor"].active{background:var(--sub)}
+  .dlbtn{width:100%;padding:9px 10px;border:0;border-radius:8px;background:#047857;color:#fff;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+  .dlbtn:hover{background:#065f46}
+  .dlbtn:disabled{background:#94a3b8;cursor:default}
+
+  #list{flex:1;overflow-y:auto;padding:6px 10px 20px}
+  .card{border:1px solid var(--line);border-radius:9px;padding:10px 11px;margin:7px 2px;cursor:pointer;transition:.12s;background:#fff}
+  .card:hover{border-color:#94a3b8;box-shadow:0 2px 8px rgba(15,23,42,.06)}
+  .card .top{display:flex;align-items:flex-start;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none}
+  .card h3{font-size:13.5px;margin:0;line-height:1.3;flex:1}
+  .card .meta{font-size:11.5px;color:var(--muted);margin-top:4px;padding-left:17px;line-height:1.4}
+  .tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;padding:2px 6px;border-radius:5px;margin-top:6px;margin-left:17px}
+  .tag.gc{background:#dbeafe;color:#1e40af} .tag.sub{background:#ffedd5;color:#9a3412}
+  .badge{display:inline-block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:2px 6px;border-radius:5px;margin-top:6px;margin-left:6px;border:1px solid transparent}
+  .badge.hq{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+  .badge.sat{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+  .phone{display:block;padding-left:17px;margin-top:3px;font-size:12px}
+  .phone a{color:var(--gc);text-decoration:none;font-weight:600}
+  .cfo{color:#059669;font-weight:600}
+  .empty{text-align:center;color:var(--muted);font-size:13px;padding:30px}
+
+  /* Map */
+  #map{flex:1;height:100%}
+  .leaflet-popup-content{margin:12px 14px;font-size:13px;line-height:1.5}
+  .pop h3{margin:0 0 6px;font-size:14px}
+  .pop .r{margin:2px 0;color:#334155}
+  .pop .lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+  .pop a{color:var(--gc);text-decoration:none;font-weight:600}
+  .pop .actions{margin-top:8px;display:flex;gap:10px}
+  .legend{position:absolute;bottom:18px;right:12px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:12px;z-index:500;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+  .legend .li{display:flex;align-items:center;gap:7px;margin:3px 0}
+  .legend .sw{width:11px;height:11px;border-radius:50%}
+  .footer{padding:9px 18px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted);line-height:1.4}
+
+  @media(max-width:780px){
+    #app{flex-direction:column}
+    #sidebar{width:100%;min-width:0;height:46%}
+    #map{height:54%}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="head">
+      <h1>Inland Empire Construction Companies</h1>
+      <p>General contractors & specialty subcontractors across Riverside and San Bernardino counties. Click a pin or card for details.</p>
+      <div class="stats">
+        <div class="stat"><div class="n" id="s-total">0</div><div class="l">Companies</div></div>
+        <div class="stat gc"><div class="n" id="s-gc">0</div><div class="l">Gen. Contractors</div></div>
+        <div class="stat sub"><div class="n" id="s-sub">0</div><div class="l">Subcontractors</div></div>
+      </div>
+    </div>
+    <div class="controls">
+      <input id="q" type="text" placeholder="Search name, city, or trade…" autocomplete="off"/>
+      <div class="seg" id="typeSeg">
+        <button data-t="all" class="active">All</button>
+        <button data-t="General Contractor">GCs</button>
+        <button data-t="Subcontractor">Subs</button>
+      </div>
+      <div class="row">
+        <select id="trade"><option value="">All trades</option></select>
+        <select id="city"><option value="">All cities</option></select>
+      </div>
+      <button id="xlsx" class="dlbtn">⬇ Download Excel (.xlsx)</button>
+    </div>
+    <div id="list"></div>
+    <div class="footer">
+      Pins are placed by city/ZIP with the exact street address shown in each record. Data compiled from public web sources, Jun 2026 — verify before outreach. CFO names shown only where publicly verifiable.
+    </div>
+  </aside>
+  <div id="map"></div>
+</div>
+<div class="legend">
+  <div class="li"><span class="sw" style="background:#1d4ed8"></span> General Contractor</div>
+  <div class="li"><span class="sw" style="background:#ea580c"></span> Subcontractor</div>
+  <div class="li" style="margin-top:5px;padding-top:5px;border-top:1px solid var(--line)"><span class="sw" style="background:#dcfce7;border:1px solid #bbf7d0"></span> Head Office</div>
+  <div class="li"><span class="sw" style="background:#f1f5f9;border:1px solid #e2e8f0"></span> Satellite Office</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>
+/* ---------- Company data (real, web-sourced Jun 2026) ---------- */
+const COMPANIES = [
+  // ===== GENERAL CONTRACTORS =====
+  {name:"Tilden-Coil Constructors, Inc.",address:"3612 Mission Inn Ave.",city:"Riverside",zip:"92501",type:"General Contractor",specialty:"Commercial / institutional / historic",cfo:"",website:"https://www.tilden-coil.com"},
+  {name:"Stronghold Engineering, Inc.",address:"3421 Gato Court",city:"Riverside",zip:"92507",type:"General Contractor",specialty:"Civil / industrial / public works",cfo:"",website:"https://www.strongholdengineering.com"},
+  {name:"Riverside Construction Company, Inc.",address:"4225 Garner Rd",city:"Riverside",zip:"92501",type:"General Contractor",specialty:"Heavy / civil engineering",cfo:"",website:"https://rivconstruct.com"},
+  {name:"Stilwell Construction, Inc.",address:"1975 Chicago Ave., Suite A",city:"Riverside",zip:"92507",type:"General Contractor",specialty:"Commercial / industrial / medical",cfo:"",website:"https://www.stilwellconstruction.com"},
+  {name:"RSVC Company",address:"3051 Myers Street, Suite B",city:"Riverside",zip:"92503",type:"General Contractor",specialty:"Retail / hospitality / TI",cfo:"",website:"https://www.rsvc.com"},
+  {name:"Inland Pacific Contractors",address:"425 W La Cadena Dr, Suite 19",city:"Riverside",zip:"92501",type:"General Contractor",specialty:"Residential / restoration",cfo:"",website:"https://www.inlandpac.net"},
+  {name:"Perera Construction & Design, Inc.",address:"2890 Inland Empire Blvd., Suite 102",city:"Ontario",zip:"91764",type:"General Contractor",specialty:"Healthcare / life sciences / industrial",cfo:"",website:"https://www.pererainc.com"},
+  {name:"Fullmer Construction",address:"1725 S Grove Ave",city:"Ontario",zip:"91761",type:"General Contractor",specialty:"Industrial tilt-up / commercial",cfo:"",website:"https://www.fullmerco.com"},
+  {name:"Prime Construction Services, Inc.",address:"500 E E St, Suite 315",city:"Ontario",zip:"91764",type:"General Contractor",specialty:"Commercial / multi-family / TI",cfo:"",website:"https://primecsinc.com"},
+  {name:"Miken Construction Company, Inc.",address:"4686 E Ontario Mills Pkwy",city:"Rancho Cucamonga",zip:"91764",type:"General Contractor",specialty:"Commercial / insurance repairs",cfo:"",website:"https://mikenconstruction.com"},
+  {name:"CSI General Contracting",address:"15969 Promontory Rd",city:"Chino Hills",zip:"91709",type:"General Contractor",specialty:"Residential / commercial / roofing",cfo:"",website:""},
+  {name:"Burner Construction Corp.",address:"17060 Branco Dr",city:"Chino Hills",zip:"91709",type:"General Contractor",specialty:"Industrial (food & bev) / TI",cfo:"",website:"https://burnerconstructioncorp.com"},
+  {name:"Pence Construction, Inc.",address:"1423 W. State St., Suite B",city:"Redlands",zip:"92373",type:"General Contractor",specialty:"Commercial & industrial buildings",cfo:"",website:"https://www.penceconstruction.com"},
+  {name:"HK Construction",address:"501 Lytle Street",city:"Redlands",zip:"92374",type:"General Contractor",specialty:"Residential / commercial remodel",cfo:"",website:"https://hkconstructionredlands.com"},
+  {name:"Anderson Design & Construction, Inc.",address:"10 E Vine St, Ste 213A",city:"Redlands",zip:"92373",type:"General Contractor",specialty:"Residential & commercial building",cfo:"",website:"https://adciconstruction.com"},
+  {name:"California Builders & Design Inc",address:"31419 Outer Highway 10 South",city:"Redlands",zip:"92373",type:"General Contractor",specialty:"Residential remodel / new build",cfo:"",website:"https://cal.builders"},
+  {name:"LBC Construction Services",address:"826 Brookside Ave., Suite G",city:"Redlands",zip:"92373",type:"General Contractor",specialty:"Residential remodel / repairs",cfo:"",website:""},
+  {name:"ICON General Contractors, Inc.",address:"1814 Commercenter W, Ste A",city:"San Bernardino",zip:"92408",type:"General Contractor",specialty:"Commercial / retail / healthcare / TI",cfo:"",website:"https://www.icongc.net"},
+  {name:"Ranjo Contractors, Inc.",address:"7031 Adams Avenue",city:"Colton",zip:"92324",type:"General Contractor",specialty:"Residential / commercial / electrical",cfo:"",website:"https://ranjocontractors.com"},
+  {name:"Oakview Constructors, Inc.",address:"959 Calimesa Blvd.",city:"Calimesa",zip:"92320",type:"General Contractor",specialty:"Educational / public works",cfo:"",website:"https://www.oakviewconstructors.net"},
+  {name:"Mercer Construction Co.",address:"42690 Rio Nedo, Suite D",city:"Temecula",zip:"92590",type:"General Contractor",specialty:"Commercial / retail / tilt-up",cfo:"",website:"https://www.mercerconstruction.com"},
+  {name:"Murrieta Development Inc.",address:"42540 Rio Nedo Road",city:"Temecula",zip:"92590",type:"General Contractor",specialty:"General engineering / civil",cfo:"",website:"https://murrietadevelopment.com"},
+  {name:"Ames Construction, Inc. (Corona office)",address:"391 N. Main Street, Suite 302",city:"Corona",zip:"92880",type:"General Contractor",specialty:"Heavy civil & industrial",cfo:"",website:""},
+  {name:"Cooley Construction, Inc.",address:"17525 Eucalyptus St, Ste G",city:"Hesperia",zip:"92345",type:"General Contractor",specialty:"Grading / paving / public works",cfo:"",website:"https://www.cooleyconstruction.net"},
+  {name:"Red Star Construction",address:"16155 Sierra Lakes Pkwy, Ste 634",city:"Fontana",zip:"92336",type:"General Contractor",specialty:"Residential / commercial remodel",cfo:"",website:""},
+  {name:"Taranto Construction, Inc.",address:"",city:"Upland",zip:"",type:"General Contractor",specialty:"General & commercial contracting",cfo:"",website:"https://tarantoconstruction.com"},
+  {name:"Custom Construction",address:"1072 W 9th St, Ste C",city:"Upland",zip:"91786",type:"General Contractor",specialty:"Residential & commercial",cfo:"",website:""},
+  {name:"Esmac Corporation",address:"5050 Cellini Drive",city:"Chino Hills",zip:"91709",type:"General Contractor",specialty:"Industrial / commercial / educational",cfo:"",website:""},
+  {name:"D&M General Construction",address:"",city:"Fontana",zip:"92336",type:"General Contractor",specialty:"Residential & commercial",cfo:"",website:""},
+  {name:"One Source Construction",address:"15420 Tamarack Drive, Suite 103",city:"Victorville",zip:"92394",type:"General Contractor",specialty:"Commercial & residential",cfo:"",website:""},
+  {name:"Bergstrom Construction, Inc.",address:"",city:"Hesperia",zip:"",type:"General Contractor",specialty:"Residential remodel / new build",cfo:"",website:"https://www.bergstromconstructioninc.com"},
+  {name:"Knight Builders, Inc.",address:"",city:"Yucaipa",zip:"",type:"General Contractor",specialty:"Custom homes / additions",cfo:"",website:"https://www.knightbuildersinc.com"},
+
+  // ===== SUBCONTRACTORS =====
+  {name:"Antunez Electrical",address:"9825 Magnolia Ave Suite B356",city:"Riverside",zip:"92503",type:"Subcontractor",specialty:"Electrical",cfo:"",website:"https://www.antunezelectrical.com"},
+  {name:"Alexander Pacific Electrical Contractors Inc.",address:"42210 Roick Dr., Suite 7",city:"Temecula",zip:"92590",type:"Subcontractor",specialty:"Electrical",cfo:"",website:"https://www.alexanderpacific.com"},
+  {name:"Service One Electric Inc.",address:"27555 Ynez Rd Ste 110",city:"Temecula",zip:"92591",type:"Subcontractor",specialty:"Electrical",cfo:"",website:"https://serviceone-electric.com"},
+  {name:"Empire Electric Co.",address:"7021 Pizzoli Pl",city:"Rancho Cucamonga",zip:"91701",type:"Subcontractor",specialty:"Electrical",cfo:"",website:"https://www.empireelectriccompany.com"},
+  {name:"SPD Electric Corp",address:"",city:"Rancho Cucamonga",zip:"",type:"Subcontractor",specialty:"Electrical",cfo:"",website:"https://spdelectric.com"},
+  {name:"Craig Mechanical, Inc.",address:"6770-A Central Avenue",city:"Riverside",zip:"92504",type:"Subcontractor",specialty:"Plumbing",cfo:"",website:"https://craigmech.com"},
+  {name:"Rossman Plumbing",address:"2810 Market St",city:"Riverside",zip:"92501",type:"Subcontractor",specialty:"Plumbing",cfo:"",website:"https://www.rossmanplumbing.com"},
+  {name:"Henley's Plumbing & Air",address:"337 W. 40th St",city:"San Bernardino",zip:"92407",type:"Subcontractor",specialty:"Plumbing",cfo:"",website:"https://www.henleysplumbingair.com"},
+  {name:"Eagle Air Co",address:"13472 5th St Ste 5",city:"Chino",zip:"91710",type:"Subcontractor",specialty:"HVAC",cfo:"",website:"https://eagleairco.com"},
+  {name:"Inland Mechanical Services, Inc.",address:"224 N Lincoln Ave",city:"Corona",zip:"92882",type:"Subcontractor",specialty:"HVAC",cfo:"",website:"https://www.inlandmechanicalservices.com"},
+  {name:"Davidson's Heating & Air Conditioning",address:"495 S. Sierra Way",city:"San Bernardino",zip:"92408",type:"Subcontractor",specialty:"HVAC",cfo:"",website:"https://www.davidsonsairandheat.com"},
+  {name:"Sanborn's Air Conditioning & Heating",address:"415 E High Ave",city:"Redlands",zip:"92374",type:"Subcontractor",specialty:"HVAC",cfo:"",website:"https://sanbornsac.com"},
+  {name:"A&G Air Conditioning Services",address:"7426 Cherry Ave Ste 20-508",city:"Fontana",zip:"92336",type:"Subcontractor",specialty:"HVAC",cfo:"",website:"https://www.agairsolutions.com"},
+  {name:"Berdoo Concrete",address:"1740 Howard Pl",city:"Redlands",zip:"92373",type:"Subcontractor",specialty:"Concrete",cfo:"",website:"https://www.berdooconcrete.com/"},
+  {name:"KeenCraft Corona Concrete",address:"1701 Rimpau Ave Suite 109",city:"Corona",zip:"92881",type:"Subcontractor",specialty:"Concrete",cfo:"",website:"https://www.coronaconcreteworks.com/"},
+  {name:"Excel Concrete Services",address:"6733 Silver Oak Place",city:"Riverside",zip:"92506",type:"Subcontractor",specialty:"Concrete",cfo:"",website:"https://www.excelconcreteservices.com/"},
+  {name:"Silverado Framing Company, Inc.",address:"3681 Sunnyside Dr. Unit-2941",city:"Riverside",zip:"92506",type:"Subcontractor",specialty:"Framing",cfo:"",website:"https://www.silveradoframing.com/"},
+  {name:"Inland Empire Framing Inc.",address:"3333 Central Ave Ste H",city:"Riverside",zip:"92506",type:"Subcontractor",specialty:"Framing",cfo:"",website:"http://www.inlandempireframing.com/"},
+  {name:"Reliance Roofing Inc.",address:"9431 Haven Ave Ste 232",city:"Rancho Cucamonga",zip:"91730",type:"Subcontractor",specialty:"Roofing",cfo:"",website:"https://www.relianceroofinginc.com/"},
+  {name:"Hull & Sons Roofing",address:"8960 Jurupa Road",city:"Riverside",zip:"92509",type:"Subcontractor",specialty:"Roofing",cfo:"",website:"https://www.hullandsons.com/"},
+  {name:"Roy O. Huffman Roof Company",address:"888 Marlborough Ave",city:"Riverside",zip:"92507",type:"Subcontractor",specialty:"Roofing",cfo:"",website:"https://www.huffmanroofco.com/"},
+  {name:"Howard & Sons, Inc.",address:"1802 Commercenter W Ste C/D",city:"San Bernardino",zip:"92408",type:"Subcontractor",specialty:"Roofing",cfo:"",website:"https://hnsca.com/"},
+  {name:"Corona Coatings Corp",address:"502 N. Colton Avenue",city:"Colton",zip:"92324",type:"Subcontractor",specialty:"Roofing",cfo:"",website:"https://www.coronacoatingscorp.com/"},
+  {name:"Temecula Valley Drywall, Inc.",address:"41228 Raintree Ct",city:"Murrieta",zip:"92562",type:"Subcontractor",specialty:"Drywall",cfo:"",website:"https://www.tvdrywall.com/"},
+  {name:"Valdez Painting LLC",address:"27082 Pam Place",city:"Moreno Valley",zip:"92555",type:"Subcontractor",specialty:"Painting",cfo:"",website:"https://www.valdezpaintingllc.com"},
+  {name:"Landry's Painting",address:"17485 Sultana Street",city:"Hesperia",zip:"92345",type:"Subcontractor",specialty:"Painting",cfo:"",website:"https://www.landryspainting.com"},
+  {name:"TruFusion Steel Co. LLC",address:"12130 Severn Way",city:"Riverside",zip:"92503",type:"Subcontractor",specialty:"Steel",cfo:"",website:"https://trufusionsteel.com"},
+  {name:"CCM Steel",address:"1413 Irving St",city:"Riverside",zip:"92504",type:"Subcontractor",specialty:"Steel",cfo:"Cory Mena",website:""},
+  {name:"KDR Steel, Co.",address:"8225 Goldmine Ave",city:"Fontana",zip:"92335",type:"Subcontractor",specialty:"Steel",cfo:"",website:"https://www.kdrsteel.com"},
+  {name:"Golden State Grating, Inc.",address:"1905 W. Rialto Ave",city:"San Bernardino",zip:"92410",type:"Subcontractor",specialty:"Steel",cfo:"",website:"http://www.goldenstategrating.com"},
+  {name:"Tinker Glass Contractors, Inc.",address:"9400 7th Street, Suite A-1",city:"Rancho Cucamonga",zip:"91730",type:"Subcontractor",specialty:"Glazing",cfo:"",website:"https://www.tinkerglass.com"},
+  {name:"D&R Glass, Inc.",address:"8687 Utica Ave",city:"Rancho Cucamonga",zip:"91730",type:"Subcontractor",specialty:"Glazing",cfo:"",website:"https://drglassinc.com"},
+  {name:"Assured Glass, Inc.",address:"8751 Prestige Ct",city:"Rancho Cucamonga",zip:"91730",type:"Subcontractor",specialty:"Glazing",cfo:"",website:"https://www.assuredglassinc.com"},
+  {name:"Pro Structural, Inc.",address:"29190 Riverside Drive",city:"Lake Elsinore",zip:"92530",type:"Subcontractor",specialty:"Masonry",cfo:"",website:"https://www.prostructuralinc.com"},
+  {name:"NPG Asphalt",address:"1354 Jet Way",city:"Perris",zip:"92571",type:"Subcontractor",specialty:"Paving",cfo:"",website:"https://npgasphalt.com"},
+  {name:"Advanced Asphalt",address:"22841 Markham St",city:"Perris",zip:"92570",type:"Subcontractor",specialty:"Paving",cfo:"",website:"https://www.advancedasphaltca.com"},
+  {name:"Matich Corporation",address:"1596 Harry Sheppard Blvd",city:"San Bernardino",zip:"92408",type:"Subcontractor",specialty:"Paving",cfo:"",website:"https://www.matichcorp.com"},
+  {name:"Brueske Grading, Inc.",address:"13870 Carol Lane",city:"Lake Mathews",zip:"92570",type:"Subcontractor",specialty:"Grading",cfo:"",website:"http://www.brueskegradingservices.com"},
+  {name:"S-Line Contractors",address:"3610 Central Ave Suite 400",city:"Riverside",zip:"92506",type:"Subcontractor",specialty:"Demolition",cfo:"",website:"https://www.slinecontractors.com"},
+  {name:"Mendoza Engineering and Construction Inc",address:"19510 Van Buren Blvd",city:"Riverside",zip:"92508",type:"Subcontractor",specialty:"Demolition",cfo:"",website:"https://mendozaengineeringconstruction.com"},
+  {name:"Gavino Landscaping, Inc.",address:"6685 Nadeau Ln",city:"Riverside",zip:"92509",type:"Subcontractor",specialty:"Landscaping",cfo:"",website:"https://gavinolandscaping.com"},
+  {name:"Valley Pacific Landscape, Inc.",address:"11698 Capitol Dr",city:"Riverside",zip:"92503",type:"Subcontractor",specialty:"Landscaping",cfo:"",website:"https://www.valleypacificlandscapinginc.com"},
+  {name:"Fire Sprinkler Systems, Inc.",address:"705 East Harrison St. Suite 200",city:"Corona",zip:"92879",type:"Subcontractor",specialty:"Fire protection",cfo:"",website:"https://www.fireinc.net"},
+  {name:"Smith Floors & Installations",address:"14417 Meridian Pkwy Building 6",city:"Riverside",zip:"92518",type:"Subcontractor",specialty:"Flooring",cfo:"",website:"https://smithfloorsandinstallations.com"}
+];
+
+/* ---------- Phone + office enrichment (web-sourced Jun 2026) ----------
+   Keyed by exact company name → [phone, office]. office is "HQ" or "Satellite".
+   Companies without an entry default to phone "" and office "HQ". */
+const ENRICH = {
+  "Tilden-Coil Constructors, Inc.":["(951) 684-5901","HQ"],
+  "Stronghold Engineering, Inc.":["(951) 684-9303","HQ"],
+  "Riverside Construction Company, Inc.":["(951) 682-8308","HQ"],
+  "Stilwell Construction, Inc.":["(951) 686-5088","HQ"],
+  "RSVC Company":["(951) 684-6006","HQ"],
+  "Inland Pacific Contractors":["(951) 684-0774","HQ"],
+  "Perera Construction & Design, Inc.":["(909) 484-6350","HQ"],
+  "Fullmer Construction":["(909) 947-9467","HQ"],
+  "Prime Construction Services, Inc.":["(909) 851-6702","HQ"],
+  "Miken Construction Company, Inc.":["(909) 373-6044","HQ"],
+  "CSI General Contracting":["(844) 702-1212","HQ"],
+  "Burner Construction Corp.":["(909) 815-8884","HQ"],
+  "Pence Construction, Inc.":["(909) 335-0423","HQ"],
+  "HK Construction":["(909) 838-2806","HQ"],
+  "Anderson Design & Construction, Inc.":["(909) 533-0382","HQ"],
+  "California Builders & Design Inc":["(909) 810-1140","HQ"],
+  "LBC Construction Services":["(909) 335-0166","HQ"],
+  "ICON General Contractors, Inc.":["(909) 890-2550","HQ"],
+  "Ranjo Contractors, Inc.":["(909) 420-9530","HQ"],
+  "Oakview Constructors, Inc.":["(909) 795-0990","HQ"],
+  "Mercer Construction Co.":["(951) 296-0111","HQ"],
+  "Murrieta Development Inc.":["(951) 719-1680","HQ"],
+  "Ames Construction, Inc. (Corona office)":["(951) 356-1275","Satellite"],
+  "Cooley Construction, Inc.":["(760) 948-8400","HQ"],
+  "Red Star Construction":["(909) 549-1910","HQ"],
+  "Taranto Construction, Inc.":["(909) 931-3233","HQ"],
+  "Custom Construction":["(909) 946-2924","HQ"],
+  "Esmac Corporation":["(310) 773-0589","HQ"],
+  "D&M General Construction":["(909) 586-4372","HQ"],
+  "One Source Construction":["(760) 261-4061","HQ"],
+  "Bergstrom Construction, Inc.":["(760) 949-8865","HQ"],
+  "Knight Builders, Inc.":["(714) 488-5466","HQ"],
+  "Antunez Electrical":["(951) 741-6938","HQ"],
+  "Alexander Pacific Electrical Contractors Inc.":["(951) 296-5835","HQ"],
+  "Service One Electric Inc.":["(951) 521-2901","HQ"],
+  "Empire Electric Co.":["(626) 393-3938","HQ"],
+  "SPD Electric Corp":["(909) 247-2211","HQ"],
+  "Craig Mechanical, Inc.":["(951) 352-7940","HQ"],
+  "Rossman Plumbing":["(951) 278-2690","HQ"],
+  "Henley's Plumbing & Air":["(909) 883-8827","HQ"],
+  "Eagle Air Co":["(714) 761-3005","HQ"],
+  "Inland Mechanical Services, Inc.":["(951) 412-3046","HQ"],
+  "Davidson's Heating & Air Conditioning":["(909) 885-2703","HQ"],
+  "Sanborn's Air Conditioning & Heating":["(909) 793-1234","HQ"],
+  "A&G Air Conditioning Services":["(909) 350-3737","HQ"],
+  "Berdoo Concrete":["(909) 495-3352","HQ"],
+  "KeenCraft Corona Concrete":["(951) 416-3795","HQ"],
+  "Excel Concrete Services":["(866) 739-2357","HQ"],
+  "Silverado Framing Company, Inc.":["(951) 352-1100","HQ"],
+  "Inland Empire Framing Inc.":["(951) 784-7816","HQ"],
+  "Reliance Roofing Inc.":["(909) 736-6607","HQ"],
+  "Hull & Sons Roofing":["(800) 997-6634","HQ"],
+  "Roy O. Huffman Roof Company":["(951) 786-4101","HQ"],
+  "Howard & Sons, Inc.":["(951) 777-6633","HQ"],
+  "Corona Coatings Corp":["(909) 825-1201","HQ"],
+  "Temecula Valley Drywall, Inc.":["(951) 600-1742","HQ"],
+  "Valdez Painting LLC":["(951) 807-1373","HQ"],
+  "Landry's Painting":["(760) 617-1051","HQ"],
+  "TruFusion Steel Co. LLC":["","HQ"],
+  "CCM Steel":["(714) 525-8949","HQ"],
+  "KDR Steel, Co.":["(909) 822-1155","HQ"],
+  "Golden State Grating, Inc.":["(909) 854-2489","HQ"],
+  "Tinker Glass Contractors, Inc.":["(909) 477-2651","HQ"],
+  "D&R Glass, Inc.":["(909) 945-0508","HQ"],
+  "Assured Glass, Inc.":["(909) 646-0839","HQ"],
+  "Pro Structural, Inc.":["(951) 303-3835","HQ"],
+  "NPG Asphalt":["(951) 940-0200","HQ"],
+  "Advanced Asphalt":["(951) 452-7155","HQ"],
+  "Matich Corporation":["(909) 382-7400","HQ"],
+  "Brueske Grading, Inc.":["(951) 780-0750","HQ"],
+  "S-Line Contractors":["(951) 502-5282","HQ"],
+  "Mendoza Engineering and Construction Inc":["(951) 452-8111","HQ"],
+  "Gavino Landscaping, Inc.":["(951) 660-6084","HQ"],
+  "Valley Pacific Landscape, Inc.":["(951) 741-5146","HQ"],
+  "Fire Sprinkler Systems, Inc.":["(951) 280-1500","HQ"],
+  "Smith Floors & Installations":["(951) 656-1004","HQ"]
+};
+COMPANIES.forEach(c=>{ const e=ENRICH[c.name]; c.phone = e?e[0]:''; c.office = e?e[1]:'HQ'; });
+
+/* ---------- CFO / finance-lead enrichment (web-sourced Jun 2026) ----------
+   Keyed by exact company name → [person, title]. Titles are the ACTUAL role found
+   (CFO, Controller, VP Finance, or owner/president who runs finances at small firms).
+   Sourced from company leadership pages, California SOS corporate filings, BBB, LinkedIn.
+   Companies omitted here had no finance lead verifiable from a reliable public source —
+   left blank rather than guessed. */
+const CFO_DATA = {
+  // General contractors
+  "Tilden-Coil Constructors, Inc.":["Greg Lackey","Owner & CFO"],
+  "Stronghold Engineering, Inc.":["Alvin Aeschlimann","CFO"],
+  "RSVC Company":["Keith Gruber","CFO"],
+  "Perera Construction & Design, Inc.":["Gilbert Moreno","CFO & Controller"],
+  "Fullmer Construction":["Gered Yetter","CFO"],
+  "Prime Construction Services, Inc.":["Andrew Farias","CFO"],
+  "Miken Construction Company, Inc.":["Reegis M. Christian","President"],
+  "CSI General Contracting":["Albert Jose Nuno","CFO"],
+  "Burner Construction Corp.":["Amber Calhoun","CFO"],
+  "Pence Construction, Inc.":["Rick Pence","President / Owner"],
+  "HK Construction":["John Kheir","Owner"],
+  "Anderson Design & Construction, Inc.":["Kevin J. Anderson","CFO"],
+  "California Builders & Design Inc":["Shannon R. Hamilton","CFO"],
+  "ICON General Contractors, Inc.":["Priscilla Stephenson","Controller"],
+  "Murrieta Development Inc.":["Todd Close","VP & CFO"],
+  "Ames Construction, Inc. (Corona office)":["Tom Bessel","CFO"],
+  "Taranto Construction, Inc.":["Joseph Paul Taranto","CEO & CFO"],
+  "Esmac Corporation":["Esteban Chavez","CFO"],
+  "One Source Construction":["Jacqueline Madeline Lopez","CFO"],
+  "Bergstrom Construction, Inc.":["Michael Arthur Bergstrom","CFO"],
+  "Knight Builders, Inc.":["Steve Kent Knight","CEO & CFO"],
+  // Subcontractors
+  "Antunez Electrical":["Manuel Barrera Antunez","CEO / CFO"],
+  "Alexander Pacific Electrical Contractors Inc.":["David T. Alexander","President / Owner"],
+  "Service One Electric Inc.":["Jeremy A. Saucedo-Tapia","CEO / Owner"],
+  "Empire Electric Co.":["Steven Reyes","Owner"],
+  "SPD Electric Corp":["Samuel De Jesus Hernandez Cruz","CEO / CFO"],
+  "Craig Mechanical, Inc.":["Frank R. Craig","CFO"],
+  "Rossman Plumbing":["Matthew Rossman","Owner"],
+  "Henley's Plumbing & Air":["Billy Henley","President"],
+  "Eagle Air Co":["Chandler Endresen","President / CEO"],
+  "Inland Mechanical Services, Inc.":["Frank Silva","CFO"],
+  "Davidson's Heating & Air Conditioning":["Richard S. Davidson","President / Owner"],
+  "Sanborn's Air Conditioning & Heating":["Geoff Sanborn","Owner / President"],
+  "A&G Air Conditioning Services":["Adrian Lopez","Owner"],
+  "Excel Concrete Services":["Noel Ruan Torres","President / Owner"],
+  "Silverado Framing Company, Inc.":["Rolando E. Solis","CEO / Owner"],
+  "Inland Empire Framing Inc.":["James Daniel Elliott","CFO"],
+  "Reliance Roofing Inc.":["Paola Gonzalez","President"],
+  "Hull & Sons Roofing":["Kyle Hull","Owner"],
+  "Roy O. Huffman Roof Company":["Kimberly Garton","President / CEO"],
+  "Howard & Sons, Inc.":["Dustyn Howard","President / Owner"],
+  "Corona Coatings Corp":["William (Bill) Johnson","Owner / Principal"],
+  "Temecula Valley Drywall, Inc.":["Doug Misemer","Principal"],
+  "Valdez Painting LLC":["Juan Carlos Valdez","Owner"],
+  "Landry's Painting":["Christopher Michael Landry","Owner"],
+  "TruFusion Steel Co. LLC":["Michael McClelland","Manager / Owner"],
+  "CCM Steel":["Cory Mena","CFO"],
+  "KDR Steel, Co.":["Jorge Luis Martinez","Owner / President"],
+  "Golden State Grating, Inc.":["Rocky Castro","President"],
+  "Tinker Glass Contractors, Inc.":["Joseph A. Tinker","President / CEO"],
+  "D&R Glass, Inc.":["Richard Scott","Owner"],
+  "Assured Glass, Inc.":["Collin Tugman","Owner"],
+  "Pro Structural, Inc.":["Rob Yowell","President / Co-Owner"],
+  "NPG Asphalt":["Sharon Nelson","CFO"],
+  "Advanced Asphalt":["Mike Stanley","Owner"],
+  "Brueske Grading, Inc.":["Curt Brueske Jr.","Owner"],
+  "S-Line Contractors":["Fahed El Bitar","President"],
+  "Gavino Landscaping, Inc.":["Andres Gavino Padilla","CFO"],
+  "Valley Pacific Landscape, Inc.":["Matthew David Sandoval","President / CEO"],
+  "Fire Sprinkler Systems, Inc.":["Ralph Tolomei","Controller"],
+  "Smith Floors & Installations":["Edward Smith","CEO / Owner"]
+};
+COMPANIES.forEach(c=>{ const d=CFO_DATA[c.name]; if(d){ c.cfo=d[0]; c.cfoTitle=d[1]; } });
+
+/* ---------- City / ZIP centroid lookup (approx) ---------- */
+const CITY = {
+  "Riverside":[33.9533,-117.3962],"Ontario":[34.0633,-117.6509],"Rancho Cucamonga":[34.1064,-117.5931],
+  "Chino Hills":[33.9898,-117.7326],"Chino":[34.0122,-117.6889],"Redlands":[34.0556,-117.1825],
+  "San Bernardino":[34.1083,-117.2898],"Colton":[34.0739,-117.3137],"Calimesa":[33.9936,-117.0617],
+  "Temecula":[33.4936,-117.1484],"Murrieta":[33.5539,-117.2139],"Corona":[33.8753,-117.5664],
+  "Hesperia":[34.4264,-117.3009],"Fontana":[34.0922,-117.4350],"Upland":[34.0975,-117.6484],
+  "Victorville":[34.5362,-117.2928],"Yucaipa":[34.0336,-117.0431],"Moreno Valley":[33.9425,-117.2297],
+  "Lake Elsinore":[33.6681,-117.3273],"Perris":[33.7825,-117.2286],"Lake Mathews":[33.8358,-117.4470]
+};
+// Deterministic hash → stable per-company jitter so same-city pins don't stack
+function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0)}
+function coordFor(c){
+  const base = CITY[c.city] || [34.05,-117.30];
+  const h = hash(c.name);
+  const jx = (((h & 0xffff)/0xffff)-0.5)*0.05;        // ~±2.7km
+  const jy = ((((h>>>16)&0xffff)/0xffff)-0.5)*0.05;
+  return [base[0]+jy, base[1]+jx];
+}
+
+/* ---------- Map setup ---------- */
+const map = L.map('map',{zoomControl:true}).setView([34.00,-117.40],10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+  attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19
+}).addTo(map);
+
+const cluster = L.markerClusterGroup({maxClusterRadius:42,spiderfyOnMaxZoom:true});
+map.addLayer(cluster);
+
+function icon(type){
+  const color = type==='General Contractor' ? '#1d4ed8' : '#ea580c';
+  return L.divIcon({
+    className:'',html:`<div style="width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
+    iconSize:[18,18],iconAnchor:[9,18],popupAnchor:[0,-16]
+  });
+}
+
+function cfoLabel(c){ return c.cfoTitle || 'CFO'; }
+function gmaps(c){
+  const q = encodeURIComponent([c.address,c.city,'CA',c.zip].filter(Boolean).join(', '));
+  return `https://www.google.com/maps/search/?api=1&query=${q}`;
+}
+function popupHTML(c){
+  const addr = [c.address,(c.city+ (c.zip?' '+c.zip:''))].filter(Boolean).join('<br>') || c.city;
+  const web = c.website ? `<a href="${c.website}" target="_blank" rel="noopener">Website ↗</a>` : '';
+  const cfo = c.cfo ? `<div class="r"><span class="lbl">${cfoLabel(c)}</span><br>${c.cfo}</div>` : `<div class="r"><span class="lbl">CFO / Finance Lead</span><br><span style="color:#94a3b8">Not publicly listed</span></div>`;
+  const isSat=c.office==='Satellite';
+  const officeBadge=`<span class="badge ${isSat?'sat':'hq'}" style="margin-left:0;margin-top:0">${isSat?'Satellite Office':'Head Office'}</span>`;
+  const phoneRow = c.phone ? `<div class="r"><span class="lbl">Phone</span><br><a href="tel:${c.phone.replace(/[^0-9]/g,'')}">${c.phone}</a></div>` : '';
+  const callLink = c.phone ? `<a href="tel:${c.phone.replace(/[^0-9]/g,'')}">Call ↗</a>` : '';
+  return `<div class="pop">
+    <h3>${c.name}</h3>
+    <div class="r"><span class="lbl">${c.type} · ${c.specialty}</span></div>
+    <div class="r" style="margin-top:4px">${officeBadge}</div>
+    <div class="r" style="margin-top:6px">${addr}</div>
+    ${phoneRow}
+    ${cfo}
+    <div class="actions"><a href="${gmaps(c)}" target="_blank" rel="noopener">Directions ↗</a> ${callLink} ${web}</div>
+  </div>`;
+}
+
+/* ---------- Build markers ---------- */
+COMPANIES.forEach(c=>{
+  c._ll = coordFor(c);
+  c._marker = L.marker(c._ll,{icon:icon(c.type)}).bindPopup(popupHTML(c));
+  c._marker._company = c;
+});
+
+/* ---------- Filtering / list ---------- */
+const listEl=document.getElementById('list');
+let activeType='all';
+
+function trades(){return [...new Set(COMPANIES.map(c=>c.specialty))].sort()}
+function cities(){return [...new Set(COMPANIES.map(c=>c.city))].sort()}
+(function fillSelects(){
+  const t=document.getElementById('trade');
+  // Use broad trade words for subs + GC specialties: just list distinct specialties
+  trades().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;t.appendChild(o)});
+  const ci=document.getElementById('city');
+  cities().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;ci.appendChild(o)});
+})();
+
+function current(){
+  const q=document.getElementById('q').value.trim().toLowerCase();
+  const trade=document.getElementById('trade').value;
+  const city=document.getElementById('city').value;
+  return COMPANIES.filter(c=>{
+    if(activeType!=='all' && c.type!==activeType) return false;
+    if(trade && c.specialty!==trade) return false;
+    if(city && c.city!==city) return false;
+    if(q){
+      const hay=(c.name+' '+c.city+' '+c.specialty+' '+c.type).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function render(){
+  const items=current();
+  // markers
+  cluster.clearLayers();
+  items.forEach(c=>cluster.addLayer(c._marker));
+  // stats
+  document.getElementById('s-total').textContent=items.length;
+  document.getElementById('s-gc').textContent=items.filter(c=>c.type==='General Contractor').length;
+  document.getElementById('s-sub').textContent=items.filter(c=>c.type==='Subcontractor').length;
+  // list
+  listEl.innerHTML='';
+  if(!items.length){listEl.innerHTML='<div class="empty">No companies match these filters.</div>';return}
+  items.sort((a,b)=>a.name.localeCompare(b.name)).forEach(c=>{
+    const isGC=c.type==='General Contractor';
+    const isSat=c.office==='Satellite';
+    const office=`<span class="badge ${isSat?'sat':'hq'}">${isSat?'Satellite Office':'Head Office'}</span>`;
+    const phone=c.phone?`<span class="phone">📞 <a href="tel:${c.phone.replace(/[^0-9]/g,'')}">${c.phone}</a></span>`:'';
+    const card=document.createElement('div');card.className='card';
+    card.innerHTML=`
+      <div class="top">
+        <span class="dot" style="background:${isGC?'#1d4ed8':'#ea580c'}"></span>
+        <h3>${c.name}</h3>
+      </div>
+      <div class="meta">${c.address?c.address+', ':''}${c.city}${c.zip?' '+c.zip:''}${c.cfo?` · <span class="cfo">${cfoLabel(c)}: ${c.cfo}</span>`:''}</div>
+      ${phone}
+      <span class="tag ${isGC?'gc':'sub'}">${isGC?'GC':'Sub'} · ${c.specialty}</span>${office}`;
+    card.onclick=()=>{
+      map.setView(c._ll,14,{animate:true});
+      c._marker.openPopup();
+    };
+    listEl.appendChild(card);
+  });
+}
+
+/* ---------- Excel export (all companies, styled .xlsx) ---------- */
+function exportXlsx(){
+  if(typeof XLSX==='undefined'){alert('Excel library is still loading — please try again in a moment.');return;}
+  const headers=['#','Company Name','Category','Trade / Specialty','Office Type','Street Address','City','State','ZIP','Phone','CFO / Finance Lead','Finance Title','Website'];
+  const rows=COMPANIES.slice().sort((a,b)=>{
+    if(a.type!==b.type) return a.type==='General Contractor'?-1:1;
+    return a.name.localeCompare(b.name);
+  }).map((c,i)=>[i+1,c.name,c.type,c.specialty,(c.office==='Satellite'?'Satellite Office':'Head Office'),c.address||'',c.city||'',(c.state||'CA'),c.zip||'',c.phone||'',c.cfo||'',(c.cfo?(c.cfoTitle||'CFO'):''),c.website||'']);
+  const aoa=[headers,...rows];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:4},{wch:40},{wch:18},{wch:26},{wch:15},{wch:34},{wch:17},{wch:6},{wch:8},{wch:16},{wch:20},{wch:18},{wch:36}];
+  ws['!autofilter']={ref:'A1:M'+aoa.length};
+  ws['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft',state:'frozen'};
+  ws['!rows']=[{hpt:24}];
+  // Header styling
+  for(let c=0;c<headers.length;c++){
+    const ref=XLSX.utils.encode_cell({r:0,c});
+    ws[ref].s={font:{bold:true,color:{rgb:'FFFFFF'},sz:11},
+      fill:{patternType:'solid',fgColor:{rgb:'0F172A'}},
+      alignment:{vertical:'center',horizontal:'left'},
+      border:{bottom:{style:'medium',color:{rgb:'1D4ED8'}}}};
+  }
+  // Body styling: zebra rows + colored Category cell
+  for(let r=1;r<aoa.length;r++){
+    const isGC=aoa[r][2]==='General Contractor';
+    for(let c=0;c<headers.length;c++){
+      const ref=XLSX.utils.encode_cell({r,c});
+      if(!ws[ref])continue;
+      const s={alignment:{vertical:'center'},font:{sz:10},
+        border:{bottom:{style:'thin',color:{rgb:'E2E8F0'}}}};
+      if(r%2===0) s.fill={patternType:'solid',fgColor:{rgb:'F8FAFC'}};
+      if(c===2) s.font={sz:10,bold:true,color:{rgb:isGC?'1D4ED8':'EA580C'}};
+      if(c===4) s.font={sz:10,color:{rgb:aoa[r][4]==='Satellite Office'?'64748B':'166534'}};
+      ws[ref].s=s;
+    }
+  }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'IE Construction Cos');
+  XLSX.writeFile(wb,'Inland_Empire_Construction_Companies.xlsx');
+}
+document.getElementById('xlsx').addEventListener('click',exportXlsx);
+
+document.getElementById('q').addEventListener('input',render);
+document.getElementById('trade').addEventListener('change',render);
+document.getElementById('city').addEventListener('change',render);
+document.querySelectorAll('#typeSeg button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('#typeSeg button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');activeType=b.dataset.t;render();
+  };
+});
+
+render();
+</script>
+</body>
+</html>
